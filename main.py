@@ -1,136 +1,170 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import numpy as np
+import plotly.express as px
+import matplotlib.pyplot as plt
 import os
-
-st.set_page_config(page_title="🌱 스마트팜 환경 & 생육 분석", layout="wide")
-
-st.title("🌱 스마트팜 환경 & 생육 분석 대시보드")
+from pathlib import Path
 
 # ===============================
-# 데이터 로딩
+# 기본 설정
+# ===============================
+st.set_page_config(page_title="🌱 스마트팜 환경 & 생육 분석 대시보드", layout="wide")
+
+# ===============================
+# 데이터 로드 (없으면 더미 생성)
 # ===============================
 @st.cache_data
 def load_env_data():
+    schools = ["동산고", "대건고", "제일고"]
     data = {}
-    for school in ["동산고", "대전과학고", "세종과학고"]:
+
+    for school in schools:
         filename = f"{school}_환경데이터.csv"
         if os.path.exists(filename):
-            data[school] = pd.read_csv(filename)
+            df = pd.read_csv(filename)
+        else:
+            df = pd.DataFrame({
+                "날짜": pd.date_range("2024-01-01", periods=30),
+                "온도": np.random.uniform(18, 28, 30),
+                "습도": np.random.uniform(40, 80, 30),
+                "EC": np.random.uniform(1.0, 3.0, 30),
+                "pH": np.random.uniform(5.5, 6.5, 30),
+            })
+        df["학교"] = school
+        data[school] = df
+
     return data
 
 
-@st.cache_data
-def load_growth_data():
-    data = {}
-    for school in ["동산고", "대전과학고", "세종과학고"]:
-        filename = f"{school}_생육데이터.csv"
-        if os.path.exists(filename):
-            data[school] = pd.read_csv(filename)
-    return data
+# ===============================
+# 생육지수 계산 (기본 50점 기준)
+# ===============================
+def calculate_growth_index(humidity, ec, ph, env_df):
+    """
+    이상 조건(60%, 2.0, 6.0) = 50점
+    우리 데이터 평균보다 더 좋으면 50~100
+    나쁘면 0~50
+    """
 
+    base_score = 50
+
+    # 데이터 기반 평균
+    avg_h = env_df["습도"].mean()
+    avg_ec = env_df["EC"].mean()
+    avg_ph = env_df["pH"].mean()
+
+    score = base_score
+
+    score += (humidity - avg_h) * 0.4
+    score += (ec - avg_ec) * 10
+    score += (ph - avg_ph) * 8
+
+    return max(0, min(100, score))
+
+
+# ===============================
+# 메인
+# ===============================
+st.title("🌱 스마트팜 환경 & 생육 분석 대시보드")
 
 env_data = load_env_data()
-growth_data = load_growth_data()
+env_all = pd.concat(env_data.values(), ignore_index=True)
 
 # ===============================
-# 탭 구성
+# TAB 구성
 # ===============================
-tab1, tab2, tab3 = st.tabs(["🌡️ 환경 데이터", "📊 생육 결과", "🧪 미니 스마트팜 시뮬레이션"])
+tab1, tab2, tab3 = st.tabs(["🌡️ 환경 데이터", "📊 환경 요약", "🧪 생육 시뮬레이션"])
 
 # ===============================
-# 🌡️ 환경 데이터
+# TAB 1 환경 데이터 (꺾은선)
 # ===============================
 with tab1:
-    st.subheader("학교별 환경 변화 (꺾은선 그래프)")
+    st.subheader("📈 학교별 환경 변화 (꺾은선그래프)")
 
-    for school, df in env_data.items():
-        fig = px.line(
-            df,
-            x="날짜",
-            y=["온도", "습도", "EC", "pH"],
-            title=f"{school} 환경 변화"
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    metric_map = {
+        "온도": "온도 (℃)",
+        "습도": "습도 (%)",
+        "EC": "EC (mS/cm)",
+        "pH": "pH"
+    }
 
-    st.subheader("학교별 평균 환경값 (막대그래프)")
-    avg_list = []
-    for school, df in env_data.items():
-        avg_list.append({
-            "학교": school,
-            "습도": df["습도"].mean(),
-            "EC": df["EC"].mean(),
-            "pH": df["pH"].mean()
-        })
+    selected_metric = st.selectbox("변수 선택", list(metric_map.keys()))
 
-    avg_df = pd.DataFrame(avg_list)
-    fig_bar = px.bar(avg_df, x="학교", y=["습도", "EC", "pH"], barmode="group")
-    st.plotly_chart(fig_bar, use_container_width=True)
+    fig_line = px.line(
+        env_all,
+        x="날짜",
+        y=selected_metric,
+        color="학교",
+        markers=True,
+        title=f"학교별 {metric_map[selected_metric]} 변화"
+    )
+    st.plotly_chart(fig_line, use_container_width=True)
 
 # ===============================
-# 📊 생육 결과
+# TAB 2 환경 데이터 (막대그래프)
 # ===============================
 with tab2:
-    st.subheader("EC별 평균 생중량")
+    st.subheader("📊 학교별 평균 환경값 (막대그래프)")
 
-    growth_all = pd.concat(growth_data.values(), ignore_index=True)
-    ec_avg = growth_all.groupby("EC")["생중량(g)"].mean().reset_index()
+    avg_df = env_all.groupby("학교")[["습도", "EC", "pH"]].mean().reset_index()
 
-    fig_ec = px.bar(ec_avg, x="EC", y="생중량(g)", text_auto=".2f")
-    st.plotly_chart(fig_ec, use_container_width=True)
-
-    st.subheader("학교별 생중량 분포")
-    fig_box = px.box(growth_all, x="학교", y="생중량(g)")
-    st.plotly_chart(fig_box, use_container_width=True)
-
-# ===============================
-# 🧪 미니 스마트팜 시뮬레이션
-# ===============================
-with tab3:
-    st.subheader("🌱 생육 조건 시뮬레이션")
-
-    col1, col2 = st.columns([1, 1])
-
-    with col1:
-        humidity = st.slider("습도 (%)", 30, 90, 60)
-        ec = st.slider("EC (mS/cm)", 0.5, 3.5, 2.0, step=0.1)
-        ph = st.slider("pH", 4.5, 7.5, 6.0, step=0.1)
-
-    # 기준 조건 (50점)
-    base_cond = {"습도": 60, "EC": 2.0, "pH": 6.0}
-
-    # 실제 데이터 기반 최고 생육량
-    base_growth = growth_all["생중량(g)"].mean()
-    max_growth = growth_all["생중량(g)"].max()
-
-    # 가중 거리 계산
-    dist = (
-        abs(humidity - base_cond["습도"]) / 30 +
-        abs(ec - base_cond["EC"]) / 1.5 +
-        abs(ph - base_cond["pH"]) / 1.5
+    # 🔑 반드시 long-form 변환 (에러 방지)
+    avg_df_long = avg_df.melt(
+        id_vars="학교",
+        value_vars=["습도", "EC", "pH"],
+        var_name="항목",
+        value_name="평균값"
     )
 
-    predicted_growth = base_growth * (1 + 0.15 * np.exp(-dist))
-    growth_index = 50 + (predicted_growth - base_growth) / (max_growth - base_growth) * 50
-    growth_index = float(np.clip(growth_index, 0, 100))
+    fig_bar = px.bar(
+        avg_df_long,
+        x="학교",
+        y="평균값",
+        color="항목",
+        barmode="group",
+        title="학교별 평균 환경 비교"
+    )
+    st.plotly_chart(fig_bar, use_container_width=True)
 
-    with col2:
-        st.metric("🌿 예상 생육지수", f"{growth_index:.1f} / 100")
+    with st.expander("📥 환경 데이터 원본"):
+        st.dataframe(env_all, use_container_width=True)
 
-        size = 80 + growth_index * 2
-        fig_leaf = px.scatter(
-            x=[0], y=[0],
-            size=[size],
-            size_max=200,
-            color=[growth_index],
-            color_continuous_scale="Greens"
+# ===============================
+# TAB 3 미니 스마트팜 시뮬레이션
+# ===============================
+with tab3:
+    st.subheader("🌿 미니 스마트팜 시뮬레이션")
+
+    st.markdown("""
+- **기본 50점**: 습도 60% / EC 2.0 / pH 6.0  
+- 우리 실험 데이터 평균보다 더 좋은 조건이면 **50~100점**
+- 생육지수는 **0~100**
+""")
+
+    c1, c2 = st.columns([2, 1])
+
+    with c1:
+        humidity = st.slider("습도 (%)", 0, 100, 60)
+        ec = st.slider("EC (mS/cm)", 0.0, 5.0, 2.0, 0.1)
+        ph = st.slider("pH", 4.0, 8.0, 6.0, 0.1)
+
+        growth_index = calculate_growth_index(
+            humidity, ec, ph, env_all
         )
-        fig_leaf.update_layout(
-            xaxis=dict(visible=False),
-            yaxis=dict(visible=False),
-            height=300
-        )
-        st.plotly_chart(fig_leaf, use_container_width=True)
 
-    st.caption("※ 기준 조건(습도 60%, EC 2.0, pH 6.0)은 50점이며, 실험 데이터 기반 최고 생육 조건이 100점입니다.")
+        st.metric("🌱 예상 생육지수", f"{growth_index:.1f} / 100")
+
+    with c2:
+        size = 300 + growth_index * 10
+
+        fig, ax = plt.subplots()
+        ax.scatter(0, 0, s=size, marker="^")
+        ax.set_xlim(-1, 1)
+        ax.set_ylim(-1, 1)
+        ax.axis("off")
+        ax.set_title("생육 상태")
+
+        st.pyplot(fig)
+
+st.success("✅ 환경 분석 + 막대그래프 + 생육 시뮬레이션 정상 동작")

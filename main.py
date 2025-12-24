@@ -15,7 +15,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# 한글 폰트 (Streamlit)
+# ===============================
+# 한글 폰트
+# ===============================
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR&display=swap');
@@ -26,7 +28,7 @@ html, body, [class*="css"] {
 """, unsafe_allow_html=True)
 
 # ===============================
-# 유틸: 한글 파일명 정규화
+# 유틸
 # ===============================
 def normalize_name(name):
     return unicodedata.normalize("NFC", name)
@@ -44,6 +46,7 @@ def load_environment_data(data_dir: Path):
             df["time"] = pd.to_datetime(df["time"])
             env_data[school] = df
     return env_data
+
 
 @st.cache_data
 def load_growth_data(data_dir: Path):
@@ -65,6 +68,7 @@ def load_growth_data(data_dir: Path):
         growth[school] = df
     return growth
 
+
 # ===============================
 # 데이터 로드
 # ===============================
@@ -83,17 +87,13 @@ with st.spinner("📂 데이터 로딩 중..."):
         st.stop()
 
 # ===============================
-# 공통 학교 추출 (🔥 핵심 수정)
+# 공통 학교
 # ===============================
 common_schools = sorted(set(env_data.keys()) & set(growth_data.keys()))
 
-if len(common_schools) == 0:
+if not common_schools:
     st.error("❌ 환경 데이터와 생육 데이터가 일치하는 학교가 없습니다.")
     st.stop()
-
-missing_env = set(growth_data.keys()) - set(env_data.keys())
-if missing_env:
-    st.warning(f"⚠ 환경 데이터가 없는 학교: {', '.join(missing_env)}")
 
 # ===============================
 # 사이드바
@@ -123,32 +123,15 @@ with tab1:
 
     for school in common_schools:
         df = growth_data[school]
-        cnt = len(df)
-        total_plants += cnt
+        total_plants += len(df)
 
         summary.append({
             "학교명": school,
-            "EC 목표": round(env_data[school]["ec"].mean(), 2),
-            "개체수": cnt
+            "평균 EC": round(env_data[school]["ec"].mean(), 2),
+            "개체수": len(df)
         })
 
-    summary_df = pd.DataFrame(summary)
-    st.dataframe(summary_df, use_container_width=True)
-
-    avg_temp = pd.concat(env_data[s]["temperature"] for s in common_schools).mean()
-    avg_hum = pd.concat(env_data[s]["humidity"] for s in common_schools).mean()
-
-    growth_all = pd.concat(growth_data[s] for s in common_schools)
-    ec_map = {s: env_data[s]["ec"].mean() for s in common_schools}
-    growth_all["EC"] = growth_all["학교"].map(ec_map)
-
-    optimal_ec = growth_all.groupby("EC")["생중량(g)"].mean().idxmax()
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("총 개체수", total_plants)
-    c2.metric("평균 온도(℃)", f"{avg_temp:.1f}")
-    c3.metric("평균 습도(%)", f"{avg_hum:.1f}")
-    c4.metric("최적 EC", f"{optimal_ec:.2f}", delta="⭐")
+    st.dataframe(pd.DataFrame(summary), use_container_width=True)
 
 # ===============================
 # Tab 2: 환경 데이터
@@ -173,15 +156,13 @@ with tab2:
         rows=2, cols=2,
         subplot_titles=("평균 온도", "평균 습도", "평균 pH", "평균 EC")
     )
+
     fig.add_bar(x=avg_df["학교"], y=avg_df["온도"], row=1, col=1)
     fig.add_bar(x=avg_df["학교"], y=avg_df["습도"], row=1, col=2)
     fig.add_bar(x=avg_df["학교"], y=avg_df["pH"], row=2, col=1)
     fig.add_bar(x=avg_df["학교"], y=avg_df["EC"], row=2, col=2)
 
-    fig.update_layout(
-        height=600,
-        font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif")
-    )
+    fig.update_layout(height=600)
     st.plotly_chart(fig, use_container_width=True)
 
     if selected_school != "전체":
@@ -190,81 +171,76 @@ with tab2:
         fig_ts.add_line(x=df["time"], y=df["temperature"], row=1, col=1)
         fig_ts.add_line(x=df["time"], y=df["humidity"], row=2, col=1)
         fig_ts.add_line(x=df["time"], y=df["ec"], row=3, col=1)
-
-        fig_ts.update_layout(
-            height=700,
-            font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif")
-        )
+        fig_ts.update_layout(height=700)
         st.plotly_chart(fig_ts, use_container_width=True)
-
-    with st.expander("📥 환경 데이터 원본"):
-        all_env = pd.concat(env_data[s] for s in common_schools)
-        st.dataframe(all_env, use_container_width=True)
-
-        buffer = io.BytesIO()
-        all_env.to_csv(buffer, index=False)
-        buffer.seek(0)
-        st.download_button(
-            "CSV 다운로드",
-            data=buffer,
-            file_name="환경데이터_전체.csv",
-            mime="text/csv"
-        )
 
 # ===============================
 # Tab 3: 생육 결과
 # ===============================
 with tab3:
-    st.subheader("🥇 EC별 평균 생중량")
+    growth_all = pd.concat(growth_data[s] for s in common_schools)
+    ec_map = {s: env_data[s]["ec"].mean() for s in common_schools}
+    growth_all["EC"] = growth_all["학교"].map(ec_map)
 
+    st.subheader("🥇 EC별 평균 생중량")
     ec_avg = growth_all.groupby("EC")["생중량(g)"].mean().reset_index()
-    fig_ec = px.bar(ec_avg, x="EC", y="생중량(g)", text_auto=".2f")
-    fig_ec.update_layout(
-        font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif")
-    )
-    st.plotly_chart(fig_ec, use_container_width=True)
+    st.plotly_chart(px.bar(ec_avg, x="EC", y="생중량(g)", text_auto=".2f"), use_container_width=True)
 
     st.subheader("📦 학교별 생중량 분포")
-    fig_box = px.box(growth_all, x="학교", y="생중량(g)")
-    fig_box.update_layout(
-        font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif")
-    )
-    st.plotly_chart(fig_box, use_container_width=True)
+    st.plotly_chart(px.box(growth_all, x="학교", y="생중량(g)"), use_container_width=True)
 
-    st.subheader("📈 상관관계 분석")
-    c1, c2 = st.columns(2)
+    # ===============================
+    # 🌱 미니 스마트팜 시뮬레이터 (최종 수정)
+    # ===============================
+    st.divider()
+    st.subheader("🧪 미니 스마트팜 시뮬레이터")
 
-    with c1:
-        fig1 = px.scatter(
-            growth_all,
-            x="잎 수(장)",
-            y="생중량(g)"
-        )
-        fig1.update_layout(
-            font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif")
-        )
-        st.plotly_chart(fig1, use_container_width=True)
+    st.markdown("""
+    **기준 상태 (50점)**  
+    - 습도: **60%**  
+    - EC: **2.0 mS/cm**  
+    - pH: **6.0**  
 
-    with c2:
-        fig2 = px.scatter(
-            growth_all,
-            x="지상부 길이(mm)",
-            y="생중량(g)"
-        )
-        fig2.update_layout(
-            font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif")
-        )
-        st.plotly_chart(fig2, use_container_width=True)
+    실험 데이터에서 이 조건보다 생육에 유리할 경우 **50점 이상**,  
+    최적 조건에서는 **100점에 도달**할 수 있다.
+    """)
 
-    with st.expander("📥 생육 데이터 원본"):
-        st.dataframe(growth_all, use_container_width=True)
+    IDEAL_H = 60.0
+    IDEAL_EC = 2.0
+    IDEAL_PH = 6.0
 
-        buffer = io.BytesIO()
-        growth_all.to_excel(buffer, index=False, engine="openpyxl")
-        buffer.seek(0)
-        st.download_button(
-            "XLSX 다운로드",
-            data=buffer,
-            file_name="생육결과_전체.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    def simulate_growth_index(h, ec, ph):
+        score = 50
+        score += (h - IDEAL_H) * 0.5
+        score += (ec - IDEAL_EC) * 15
+        score += (ph - IDEAL_PH) * 12
+        return max(0, min(100, score))
+
+    col1, col2 = st.columns([2, 1])
+
+    with col1:
+        h = st.slider("습도 (%)", 0, 100, 60)
+        ec = st.slider("EC (mS/cm)", 0.0, 5.0, 2.0, 0.1)
+        ph = st.slider("pH", 4.0, 8.0, 6.0, 0.1)
+
+        score = simulate_growth_index(h, ec, ph)
+        st.metric("🌱 예상 생육지수", f"{score:.1f} / 100")
+
+    with col2:
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=[0], y=[0],
+            mode="markers",
+            marker=dict(
+                size=score * 3 + 20,
+                color="green",
+                symbol="triangle-up"
+            )
+        ))
+        fig.update_layout(
+            height=300,
+            xaxis=dict(visible=False),
+            yaxis=dict(visible=False),
+            title="생육 상태 시각화"
         )
+        st.plotly_chart(fig, use_container_width=True)

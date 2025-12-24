@@ -1,247 +1,136 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
-from pathlib import Path
-import unicodedata
-import io
+import numpy as np
+import os
 
-# =========================
-# 기본 설정
-# =========================
-st.set_page_config(page_title="🌱 극지식물 최적 EC 농도 연구", layout="wide")
+st.set_page_config(page_title="🌱 스마트팜 환경 & 생육 분석", layout="wide")
 
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR&display=swap');
-html, body, [class*="css"] {
-    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
-}
-</style>
-""", unsafe_allow_html=True)
+st.title("🌱 스마트팜 환경 & 생육 분석 대시보드")
 
-BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data"
-
-# =========================
-# 한글 파일명 안전 탐색 (NFC/NFD)
-# =========================
-def find_file(directory: Path, target: str):
-    t_nfc = unicodedata.normalize("NFC", target)
-    t_nfd = unicodedata.normalize("NFD", target)
-
-    for f in directory.iterdir():
-        f_nfc = unicodedata.normalize("NFC", f.name)
-        f_nfd = unicodedata.normalize("NFD", f.name)
-        if f_nfc == t_nfc or f_nfd == t_nfd:
-            return f
-    return None
-
-# =========================
+# ===============================
 # 데이터 로딩
-# =========================
+# ===============================
 @st.cache_data
 def load_env_data():
-    env = {}
-    schools = ["동산고", "송도고", "아라고", "하늘고"]
+    data = {}
+    for school in ["동산고", "대전과학고", "세종과학고"]:
+        filename = f"{school}_환경데이터.csv"
+        if os.path.exists(filename):
+            data[school] = pd.read_csv(filename)
+    return data
 
-    for school in schools:
-        file = find_file(DATA_DIR, f"{school}_환경데이터.csv")
-        if file is None:
-            st.error(f"❌ 환경 데이터 없음: {school}")
-            st.stop()
-
-        df = pd.read_csv(file)
-        df["time"] = pd.to_datetime(df["time"])
-        df["학교"] = school
-        env[school] = df
-
-    return env
 
 @st.cache_data
 def load_growth_data():
-    xlsx = find_file(DATA_DIR, "4개교_생육결과데이터.xlsx")
-    if xlsx is None:
-        st.error("❌ 생육 결과 XLSX 파일 없음")
-        st.stop()
+    data = {}
+    for school in ["동산고", "대전과학고", "세종과학고"]:
+        filename = f"{school}_생육데이터.csv"
+        if os.path.exists(filename):
+            data[school] = pd.read_csv(filename)
+    return data
 
-    sheets = pd.ExcelFile(xlsx, engine="openpyxl").sheet_names
-    return {s: pd.read_excel(xlsx, sheet_name=s) for s in sheets}
 
-with st.spinner("데이터 로딩 중..."):
-    env_data = load_env_data()
-    growth_data = load_growth_data()
+env_data = load_env_data()
+growth_data = load_growth_data()
 
-# =========================
-# 데이터 통합
-# =========================
-@st.cache_data
-def merge_env(env_dict):
-    return pd.concat(env_dict.values(), ignore_index=True)
+# ===============================
+# 탭 구성
+# ===============================
+tab1, tab2, tab3 = st.tabs(["🌡️ 환경 데이터", "📊 생육 결과", "🧪 미니 스마트팜 시뮬레이션"])
 
-@st.cache_data
-def merge_growth(growth_dict, env_dict):
-    out = []
-    for school, df in growth_dict.items():
-        tmp = df.copy()
-        tmp["학교"] = school
-        tmp["EC"] = round(env_dict[school]["ec"].mean(), 2)
-        out.append(tmp)
-    return pd.concat(out, ignore_index=True)
-
-env_all = merge_env(env_data)
-growth_all = merge_growth(growth_data, env_data)
-
-# =========================
-# 생육지수 계산 (시뮬레이션)
-# =========================
-def growth_index(h, ec, ph):
-    ideal_h, ideal_ec, ideal_ph = 60, 2.0, 6.0
-    score = (
-        100
-        - abs(h - ideal_h) * 0.8
-        - abs(ec - ideal_ec) * 20
-        - abs(ph - ideal_ph) * 15
-    )
-    return max(0, min(100, score))
-
-# =========================
-# UI
-# =========================
-st.title("🌱 극지식물 최적 EC 농도 연구")
-
-tab1, tab2, tab3, tab4 = st.tabs(
-    ["📖 실험 개요", "🌡️ 환경 데이터", "📊 생육 결과", "🧪 스마트팜 시뮬레이션"]
-)
-
-# =========================
-# TAB 1 실험 개요
-# =========================
+# ===============================
+# 🌡️ 환경 데이터
+# ===============================
 with tab1:
-    st.markdown("""
-### 🔍 연구 배경 및 목적  
-극지 환경을 모사한 조건에서  
-EC(전기전도도) 농도 차이가 식물 생육에 미치는 영향을 분석하여  
-최적 EC 농도 조건을 도출한다.
-""")
+    st.subheader("학교별 환경 변화 (꺾은선 그래프)")
 
-    summary = []
-    total = 0
-    for school, df in growth_data.items():
-        summary.append({
-            "학교명": school,
-            "EC 목표": round(env_data[school]["ec"].mean(), 2),
-            "개체수": len(df)
-        })
-        total += len(df)
-
-    st.dataframe(pd.DataFrame(summary), use_container_width=True)
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("총 개체수", total)
-    c2.metric("평균 온도", round(env_all["temperature"].mean(), 2))
-    c3.metric("평균 습도", round(env_all["humidity"].mean(), 2))
-    c4.metric("최적 EC", "2.0 ⭐ (하늘고)")
-
-# =========================
-# TAB 2 환경 데이터 (선 + 막대)
-# =========================
-with tab2:
-    st.subheader("📈 학교별 환경 변화 (꺾은선그래프)")
-
-    metrics = {
-        "temperature": "온도 (℃)",
-        "humidity": "습도 (%)",
-        "ph": "pH",
-        "ec": "EC"
-    }
-
-    # ---- 꺾은선그래프 ----
-    for col, label in metrics.items():
+    for school, df in env_data.items():
         fig = px.line(
-            env_all,
-            x="time",
-            y=col,
-            color="학교",
-            markers=True,
-            title=f"학교별 {label} 변화"
+            df,
+            x="날짜",
+            y=["온도", "습도", "EC", "pH"],
+            title=f"{school} 환경 변화"
         )
-        fig.update_layout(font=dict(family="Malgun Gothic"))
         st.plotly_chart(fig, use_container_width=True)
 
-    st.divider()
+    st.subheader("학교별 평균 환경값 (막대그래프)")
+    avg_list = []
+    for school, df in env_data.items():
+        avg_list.append({
+            "학교": school,
+            "습도": df["습도"].mean(),
+            "EC": df["EC"].mean(),
+            "pH": df["pH"].mean()
+        })
 
-    # ---- 평균 막대그래프 ----
-    st.subheader("📊 학교별 환경 평균 비교 (막대그래프)")
+    avg_df = pd.DataFrame(avg_list)
+    fig_bar = px.bar(avg_df, x="학교", y=["습도", "EC", "pH"], barmode="group")
+    st.plotly_chart(fig_bar, use_container_width=True)
 
-    env_mean = (
-        env_all
-        .groupby("학교")[list(metrics.keys())]
-        .mean()
-        .reset_index()
+# ===============================
+# 📊 생육 결과
+# ===============================
+with tab2:
+    st.subheader("EC별 평균 생중량")
+
+    growth_all = pd.concat(growth_data.values(), ignore_index=True)
+    ec_avg = growth_all.groupby("EC")["생중량(g)"].mean().reset_index()
+
+    fig_ec = px.bar(ec_avg, x="EC", y="생중량(g)", text_auto=".2f")
+    st.plotly_chart(fig_ec, use_container_width=True)
+
+    st.subheader("학교별 생중량 분포")
+    fig_box = px.box(growth_all, x="학교", y="생중량(g)")
+    st.plotly_chart(fig_box, use_container_width=True)
+
+# ===============================
+# 🧪 미니 스마트팜 시뮬레이션
+# ===============================
+with tab3:
+    st.subheader("🌱 생육 조건 시뮬레이션")
+
+    col1, col2 = st.columns([1, 1])
+
+    with col1:
+        humidity = st.slider("습도 (%)", 30, 90, 60)
+        ec = st.slider("EC (mS/cm)", 0.5, 3.5, 2.0, step=0.1)
+        ph = st.slider("pH", 4.5, 7.5, 6.0, step=0.1)
+
+    # 기준 조건 (50점)
+    base_cond = {"습도": 60, "EC": 2.0, "pH": 6.0}
+
+    # 실제 데이터 기반 최고 생육량
+    base_growth = growth_all["생중량(g)"].mean()
+    max_growth = growth_all["생중량(g)"].max()
+
+    # 가중 거리 계산
+    dist = (
+        abs(humidity - base_cond["습도"]) / 30 +
+        abs(ec - base_cond["EC"]) / 1.5 +
+        abs(ph - base_cond["pH"]) / 1.5
     )
 
-    for col, label in metrics.items():
-        fig_bar = px.bar(
-            env_mean,
-            x="학교",
-            y=col,
-            text_auto=".2f",
-            title=f"학교별 평균 {label}"
+    predicted_growth = base_growth * (1 + 0.15 * np.exp(-dist))
+    growth_index = 50 + (predicted_growth - base_growth) / (max_growth - base_growth) * 50
+    growth_index = float(np.clip(growth_index, 0, 100))
+
+    with col2:
+        st.metric("🌿 예상 생육지수", f"{growth_index:.1f} / 100")
+
+        size = 80 + growth_index * 2
+        fig_leaf = px.scatter(
+            x=[0], y=[0],
+            size=[size],
+            size_max=200,
+            color=[growth_index],
+            color_continuous_scale="Greens"
         )
-        fig_bar.update_layout(font=dict(family="Malgun Gothic"))
-        st.plotly_chart(fig_bar, use_container_width=True)
-
-    with st.expander("📥 환경 데이터 원본"):
-        st.dataframe(env_all, use_container_width=True)
-        buf = io.BytesIO()
-        env_all.to_excel(buf, index=False, engine="openpyxl")
-        buf.seek(0)
-        st.download_button(
-            "환경데이터 XLSX 다운로드",
-            data=buf,
-            file_name="환경데이터_전체.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-
-# =========================
-# TAB 3 생육 결과
-# =========================
-with tab3:
-    st.subheader("🥇 EC별 평균 생중량")
-
-    ec_avg = growth_all.groupby("EC", as_index=False)["생중량(g)"].mean()
-
-    c1, c2 = st.columns(2)
-    c1.plotly_chart(px.bar(ec_avg, x="EC", y="생중량(g)", text_auto=".2f"), True)
-    c2.plotly_chart(px.line(ec_avg, x="EC", y="생중량(g)", markers=True), True)
-
-    st.subheader("📦 학교별 생중량 분포")
-    st.plotly_chart(px.box(growth_all, x="학교", y="생중량(g)"), True)
-
-# =========================
-# TAB 4 스마트팜 시뮬레이션
-# =========================
-with tab4:
-    st.subheader("🌿 미니 스마트팜 생육 시뮬레이션")
-
-    c1, c2 = st.columns([2, 1])
-
-    with c1:
-        h = st.slider("습도 (%)", 0, 100, 60)
-        ec = st.slider("EC (mS/cm)", 0.0, 5.0, 2.0, 0.1)
-        ph = st.slider("pH", 4.0, 8.0, 6.0, 0.1)
-
-        gi = growth_index(h, ec, ph)
-        st.metric("예상 생육지수", f"{gi:.1f} / 100")
-
-    with c2:
-        size = 20 + gi * 4
-        fig = px.scatter(x=[0], y=[0], size=[size], size_max=120)
-        fig.update_layout(
+        fig_leaf.update_layout(
             xaxis=dict(visible=False),
             yaxis=dict(visible=False),
-            showlegend=False,
-            title="🌱 생육 상태"
+            height=300
         )
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig_leaf, use_container_width=True)
+
+    st.caption("※ 기준 조건(습도 60%, EC 2.0, pH 6.0)은 50점이며, 실험 데이터 기반 최고 생육 조건이 100점입니다.")

@@ -238,20 +238,22 @@ with tab3:
         fig1 = px.scatter(
             growth_all,
             x="잎 수(장)",
-            y="생중량(g)",
-            trendline="ols"
+            y="생중량(g)"
         )
-        fig1.update_layout(font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif"))
+        fig1.update_layout(
+            font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif")
+        )
         st.plotly_chart(fig1, use_container_width=True)
 
     with c2:
         fig2 = px.scatter(
             growth_all,
             x="지상부 길이(mm)",
-            y="생중량(g)",
-            trendline="ols"
+            y="생중량(g)"
         )
-        fig2.update_layout(font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif"))
+        fig2.update_layout(
+            font=dict(family="Malgun Gothic, Apple SD Gothic Neo, sans-serif")
+        )
         st.plotly_chart(fig2, use_container_width=True)
 
     with st.expander("📥 생육 데이터 원본"):
@@ -266,4 +268,3 @@ with tab3:
             file_name="생육결과_전체.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
-

@@ -144,7 +144,7 @@ EC(전기전도도) 농도 차이가 식물 생육에 미치는 영향을 분석
     c4.metric("최적 EC", "2.0 ⭐ (하늘고)")
 
 # =========================
-# TAB 2 환경 데이터
+# TAB 2 환경 데이터 (선 + 막대)
 # =========================
 with tab2:
     st.subheader("📈 학교별 환경 변화 (꺾은선그래프)")
@@ -156,6 +156,7 @@ with tab2:
         "ec": "EC"
     }
 
+    # ---- 꺾은선그래프 ----
     for col, label in metrics.items():
         fig = px.line(
             env_all,
@@ -167,6 +168,29 @@ with tab2:
         )
         fig.update_layout(font=dict(family="Malgun Gothic"))
         st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+
+    # ---- 평균 막대그래프 ----
+    st.subheader("📊 학교별 환경 평균 비교 (막대그래프)")
+
+    env_mean = (
+        env_all
+        .groupby("학교")[list(metrics.keys())]
+        .mean()
+        .reset_index()
+    )
+
+    for col, label in metrics.items():
+        fig_bar = px.bar(
+            env_mean,
+            x="학교",
+            y=col,
+            text_auto=".2f",
+            title=f"학교별 평균 {label}"
+        )
+        fig_bar.update_layout(font=dict(family="Malgun Gothic"))
+        st.plotly_chart(fig_bar, use_container_width=True)
 
     with st.expander("📥 환경 데이터 원본"):
         st.dataframe(env_all, use_container_width=True)
@@ -194,18 +218,6 @@ with tab3:
 
     st.subheader("📦 학교별 생중량 분포")
     st.plotly_chart(px.box(growth_all, x="학교", y="생중량(g)"), True)
-
-    with st.expander("📥 생육 데이터 원본"):
-        st.dataframe(growth_all, use_container_width=True)
-        buf = io.BytesIO()
-        growth_all.to_excel(buf, index=False, engine="openpyxl")
-        buf.seek(0)
-        st.download_button(
-            "생육결과 XLSX 다운로드",
-            data=buf,
-            file_name="생육결과_전체.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
 
 # =========================
 # TAB 4 스마트팜 시뮬레이션

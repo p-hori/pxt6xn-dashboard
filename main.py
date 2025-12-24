@@ -5,6 +5,7 @@ import plotly.express as px
 from pathlib import Path
 import unicodedata
 import io
+import os  
 
 
 st.set_page_config(page_title="스마트팜 대시보드", layout="wide")

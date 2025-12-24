@@ -1,8 +1,11 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import os
+import plotly.express as px
+from pathlib import Path
+import unicodedata
+import io
+
 
 st.set_page_config(page_title="스마트팜 대시보드", layout="wide")
 
